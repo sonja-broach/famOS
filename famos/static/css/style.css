@@ -1,0 +1,126 @@
+/* Custom styles for famOS */
+
+:root {
+    --primary: #1a73e8;
+    --secondary: #5f6368;
+    --background: #f8f9fa;
+    --success: #0f9d58;
+    --warning: #f4b400;
+    --error: #d93025;
+}
+
+/* Base styles */
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--background);
+    padding-top: 56px;
+}
+
+main {
+    flex: 1;
+}
+
+/* Navbar customization */
+.navbar {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+}
+
+.navbar-brand i {
+    margin-right: 0.5rem;
+}
+
+/* Feature icons */
+.icon-square {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 0.75rem;
+}
+
+/* Custom button styles */
+.btn i {
+    margin-right: 0.5rem;
+}
+
+.btn-primary {
+    background-color: var(--primary);
+    border-color: var(--primary);
+}
+
+.btn-primary:hover {
+    background-color: #1557b0;
+    border-color: #1557b0;
+}
+
+/* Dashboard cards */
+.dashboard-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.dashboard-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+.dashboard-card .card-title {
+    color: var(--primary);
+    font-weight: 500;
+}
+
+.dashboard-card .list-group-item i {
+    margin-right: 0.5rem;
+    color: var(--primary);
+}
+
+/* Task priority colors */
+.priority-high {
+    border-left: 4px solid var(--error);
+}
+
+.priority-medium {
+    border-left: 4px solid var(--warning);
+}
+
+.priority-low {
+    border-left: 4px solid var(--success);
+}
+
+/* Form customization */
+.form-control:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 0.2rem rgba(26, 115, 232, 0.25);
+}
+
+/* Alert customization */
+.alert-success {
+    background-color: var(--success);
+    border-color: var(--success);
+    color: white;
+}
+
+.alert-warning {
+    background-color: var(--warning);
+    border-color: var(--warning);
+    color: #333;
+}
+
+.alert-danger {
+    background-color: var(--error);
+    border-color: var(--error);
+    color: white;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .icon-square {
+        width: 2.5rem;
+        height: 2.5rem;
+    }
+    
+    .container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - famOS{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3">
+            <i class="bi bi-speedometer2"></i> Dashboard
+        </h1>
+        <div>
+            <span class="text-muted">Welcome, {{ current_user.first_name }}!</span>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Quick Actions -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 shadow-sm dashboard-card">
+                <div class="card-body">
+                    <h5 class="card-title text-primary">
+                        <i class="bi bi-lightning-charge"></i> Quick Actions
+                    </h5>
+                    <div class="list-group list-group-flush">
+                        <a href="{{ url_for('family.manage') }}" class="list-group-item list-group-item-action">
+                            <i class="bi bi-people"></i> Manage Family
+                        </a>
+                        <a href="{{ url_for('contacts.index') }}" class="list-group-item list-group-item-action">
+                            <i class="bi bi-journal-text"></i> Key Contacts
+                        </a>
+                        <a href="#" class="list-group-item list-group-item-action">
+                            <i class="bi bi-calendar-event"></i> Add Event
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upcoming Events -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 shadow-sm dashboard-card">
+                <div class="card-body">
+                    <h5 class="card-title text-primary">
+                        <i class="bi bi-calendar3"></i> Upcoming Events
+                    </h5>
+                    <p class="text-muted small">No upcoming events</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tasks Overview -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 shadow-sm dashboard-card">
+                <div class="card-body">
+                    <h5 class="card-title text-primary">
+                        <i class="bi bi-check2-square"></i> Tasks Overview
+                    </h5>
+                    <p class="text-muted small">No pending tasks</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Family Activity -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 shadow-sm dashboard-card">
+                <div class="card-body">
+                    <h5 class="card-title text-primary">
+                        <i class="bi bi-activity"></i> Family Activity
+                    </h5>
+                    <p class="text-muted small">No recent activity</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
