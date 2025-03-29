@@ -39,14 +39,24 @@ def create_app(config_class=Config):
     login_manager.init_app(app)
     csrf.init_app(app)
 
+    # Set up login manager
+    login_manager.login_view = 'auth.login'
+    login_manager.login_message_category = 'info'
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        from famos.models import User
+        return User.query.get(int(user_id))
+
     # Set up logging
     setup_logger(app)
 
-    # Import models to ensure they are registered with SQLAlchemy
+    # Import models
     from famos.models import User, Family, Task, Contact
+    from famos.models.integrations import GoogleIntegration
 
     # Register blueprints
-    from famos.routes import main, auth, family, tasks, calendar, contacts, account
+    from famos.routes import main, auth, family, tasks, calendar, contacts, account, integrations
     app.register_blueprint(main.bp)
     app.register_blueprint(auth.bp, url_prefix='/auth')
     app.register_blueprint(family.bp, url_prefix='/family')
@@ -54,6 +64,7 @@ def create_app(config_class=Config):
     app.register_blueprint(calendar.bp, url_prefix='/calendar')
     app.register_blueprint(contacts.bp, url_prefix='/contacts')
     app.register_blueprint(account.bp, url_prefix='/account')
+    app.register_blueprint(integrations.bp)
 
     # Create database tables
     with app.app_context():

@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Google Integration</h2>
+    
+    {% if not integration or not integration.is_connected() %}
+        <div class="alert alert-info">
+            <h4>Connect Your Google Account</h4>
+            <p>Connect your personal Google account to enable integration with:</p>
+            <ul>
+                <li>Google Calendar - Sync your family calendar</li>
+                <li>Google Tasks - Manage your family tasks</li>
+                <li>Google Drive - Access and share family documents</li>
+            </ul>
+            <p>Your data remains private and secure. You can control exactly which services to enable and disconnect at any time.</p>
+            <a href="{{ url_for('integrations.google_connect') }}" class="btn btn-primary">
+                <i class="fab fa-google mr-2"></i> Connect Google Account
+            </a>
+        </div>
+    {% else %}
+        <div class="card">
+            <div class="card-body">
+                <h4 class="card-title">Connected Google Account</h4>
+                <p class="text-success"><i class="fas fa-check-circle"></i> Your Google account is connected</p>
+                
+                <form action="{{ url_for('integrations.google_update') }}" method="post">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    
+                    <h5 class="mt-4">Enabled Services</h5>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" id="calendar" name="calendar" 
+                               {% if integration.calendar_enabled %}checked{% endif %}>
+                        <label class="form-check-label" for="calendar">
+                            Google Calendar Integration
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-2">
+                        <input type="checkbox" class="form-check-input" id="tasks" name="tasks"
+                               {% if integration.tasks_enabled %}checked{% endif %}>
+                        <label class="form-check-label" for="tasks">
+                            Google Tasks Integration
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="docs" name="docs"
+                               {% if integration.docs_enabled %}checked{% endif %}>
+                        <label class="form-check-label" for="docs">
+                            Google Drive Integration
+                        </label>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">Update Settings</button>
+                    <a href="{{ url_for('integrations.google_disconnect') }}" class="btn btn-danger ml-2"
+                       onclick="return confirm('Are you sure you want to disconnect your Google account? This will disable all Google integrations.')">
+                        Disconnect Google Account
+                    </a>
+                </form>
+            </div>
+        </div>
+        
+        <div class="alert alert-info mt-3">
+            <h5>Privacy & Security</h5>
+            <p>Your Google account connection is secure and private. You can:</p>
+            <ul>
+                <li>Choose which services to enable/disable</li>
+                <li>Disconnect your account at any time</li>
+                <li>Revoke access through your <a href="https://myaccount.google.com/permissions" target="_blank">Google Account Settings</a></li>
+            </ul>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
