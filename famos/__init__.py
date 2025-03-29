@@ -56,7 +56,7 @@ def create_app(config_class=Config):
     from famos.models.integrations import GoogleIntegration
 
     # Register blueprints
-    from famos.routes import main, auth, family, tasks, calendar, contacts, account, integrations
+    from famos.routes import main, auth, family, tasks, calendar, contacts, account, integrations, dashboard
     app.register_blueprint(main.bp)
     app.register_blueprint(auth.bp, url_prefix='/auth')
     app.register_blueprint(family.bp, url_prefix='/family')
@@ -65,9 +65,25 @@ def create_app(config_class=Config):
     app.register_blueprint(contacts.bp, url_prefix='/contacts')
     app.register_blueprint(account.bp, url_prefix='/account')
     app.register_blueprint(integrations.bp)
+    app.register_blueprint(dashboard.bp)
 
     # Create database tables
     with app.app_context():
         db.create_all()
+
+    # Template filters
+    @app.template_filter('datetime')
+    def format_datetime(value):
+        if not value:
+            return ''
+        from datetime import datetime
+        try:
+            if isinstance(value, str):
+                dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            else:
+                dt = value
+            return dt.strftime('%B %d, %Y %I:%M %p')
+        except:
+            return value
 
     return app

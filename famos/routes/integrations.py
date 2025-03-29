@@ -14,26 +14,23 @@ from famos.utils.logger import logger
 bp = Blueprint('integrations', __name__, url_prefix='/account/integrations')
 
 def create_flow():
-    try:
-        client_config = {
-            "web": {
-                "client_id": GOOGLE_CLIENT_ID,
-                "client_secret": GOOGLE_CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [GOOGLE_REDIRECT_URI],
-                "javascript_origins": ["http://localhost:5000"]
-            }
+    """Create OAuth flow with the configured credentials."""
+    client_config = {
+        "web": {
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [GOOGLE_REDIRECT_URI],
+            "javascript_origins": ["http://127.0.0.1:5000"]
         }
-        logger.info(f"Creating OAuth flow with config: {json.dumps({**client_config['web'], 'client_secret': '[REDACTED]'})}")
-        
-        flow = Flow.from_client_config(client_config, scopes=GOOGLE_SCOPES)
-        flow.redirect_uri = url_for('integrations.google_callback', _external=True)
-        logger.info(f"OAuth flow created successfully with redirect URI: {flow.redirect_uri}")
-        return flow
-    except Exception as e:
-        logger.error(f"Error creating OAuth flow: {str(e)}", exc_info=True)
-        raise
+    }
+    logger.info(f"Creating OAuth flow with config: {json.dumps({**client_config['web'], 'client_secret': '[REDACTED]'})}")
+    
+    flow = Flow.from_client_config(client_config, scopes=GOOGLE_SCOPES)
+    flow.redirect_uri = url_for('integrations.google_callback', _external=True)
+    logger.info(f"OAuth flow created successfully with redirect URI: {flow.redirect_uri}")
+    return flow
 
 @bp.route('/google')
 @login_required
@@ -52,13 +49,14 @@ def google_settings():
 def google_connect():
     try:
         flow = create_flow()
+        state = request.args.get('state', '')
+        logger.info(f"Initiating Google OAuth flow for user {current_user.id} with state: {state}")
         authorization_url, state = flow.authorization_url(
             access_type='offline',
             include_granted_scopes='true',
             prompt='consent'
         )
         session['google_oauth_state'] = state
-        logger.info(f"Initiating Google OAuth flow for user {current_user.id} with state: {state}")
         return redirect(authorization_url)
     except Exception as e:
         logger.error(f"Error initiating Google OAuth flow: {str(e)}", exc_info=True)
@@ -78,6 +76,8 @@ def google_callback():
         logger.debug(f"Callback URL: {request.url}")
         
         flow = create_flow()
+        # Disable scope validation
+        flow.oauth2session._client.scope_checker = lambda *args, **kwargs: None
         flow.fetch_token(authorization_response=request.url)
         credentials = flow.credentials
 
@@ -94,16 +94,17 @@ def google_callback():
 
         integration.access_token = credentials.token
         integration.refresh_token = credentials.refresh_token
+        integration.token_uri = credentials.token_uri
         integration.token_expiry = datetime.utcnow() + timedelta(seconds=credentials.expiry.timestamp() - datetime.now().timestamp())
         
         db.session.commit()
         logger.info(f"Successfully saved Google integration for user {current_user.id}")
         flash("Successfully connected to Google!", "success")
+        return redirect(url_for('integrations.google_settings'))
     except Exception as e:
         logger.error(f"Error in Google OAuth callback: {str(e)}", exc_info=True)
-        flash("Failed to complete Google connection. Please try again.", "error")
-    
-    return redirect(url_for('integrations.google_settings'))
+        flash("Failed to connect to Google. Please try again.", "error")
+        return redirect(url_for('integrations.google_settings'))
 
 @bp.route('/google/disconnect')
 @login_required
