@@ -9,6 +9,7 @@ class Family(db.Model):
     # Relationships
     members = db.relationship('User', back_populates='family')
     tasks = db.relationship('Task', back_populates='family', cascade='all, delete-orphan')
+    contacts = db.relationship('Contact', back_populates='family', cascade='all, delete-orphan')
     
     def __repr__(self):
         return f'<Family {self.name}>'

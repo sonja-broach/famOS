@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from famos import db
 from famos.models import User
 from famos.forms import LoginForm, RegistrationForm
+import traceback
 
 bp = Blueprint('auth', __name__)
 
@@ -45,6 +46,11 @@ def register():
     form = RegistrationForm()
     if form.validate_on_submit():
         try:
+            # Check if email already exists
+            if User.query.filter_by(email=form.email.data).first():
+                flash('Email already registered. Please use a different one.', 'danger')
+                return redirect(url_for('auth.register'))
+            
             user = User(
                 email=form.email.data,
                 first_name=form.first_name.data,
@@ -59,6 +65,7 @@ def register():
             return redirect(url_for('auth.login'))
         except Exception as e:
             current_app.logger.error(f'Error during registration for email {form.email.data}: {str(e)}')
+            current_app.logger.error(f'Traceback: {traceback.format_exc()}')
             db.session.rollback()
             flash('An error occurred during registration. Please try again.', 'danger')
             return redirect(url_for('auth.register'))

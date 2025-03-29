@@ -25,8 +25,13 @@ def create_app(config_class=Config):
     
     # Configuration
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-key-change-this')
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///famos.db')
+    # Set instance path explicitly for famOS
+    app.instance_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance')
+    if not os.path.exists(app.instance_path):
+        os.makedirs(app.instance_path)
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', f'sqlite:///{os.path.join(app.instance_path, "famos.db")}')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['DEBUG'] = True  # Enable debug mode
 
     # Initialize extensions
     db.init_app(app)
@@ -38,7 +43,7 @@ def create_app(config_class=Config):
     setup_logger(app)
 
     # Import models to ensure they are registered with SQLAlchemy
-    from famos.models import User, Family, Task
+    from famos.models import User, Family, Task, Contact
 
     # Register blueprints
     from famos.routes import main, auth, family, tasks, calendar, contacts, account

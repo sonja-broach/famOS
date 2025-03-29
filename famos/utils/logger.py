@@ -2,6 +2,9 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 
+# Create a logger instance
+logger = logging.getLogger('famos')
+
 def setup_logger(app):
     if not os.path.exists('logs'):
         os.mkdir('logs')
@@ -24,9 +27,13 @@ def setup_logger(app):
     ))
     stream_handler.setLevel(logging.INFO)
     
-    # Add handlers to app logger
-    app.logger.addHandler(file_handler)
-    app.logger.addHandler(stream_handler)
+    # Add handlers to both app and module loggers
+    for handler in [file_handler, stream_handler]:
+        app.logger.addHandler(handler)
+        logger.addHandler(handler)
+    
     app.logger.setLevel(logging.INFO)
+    logger.setLevel(logging.INFO)
     
     app.logger.info('famOS startup')
+    logger.info('famOS startup')

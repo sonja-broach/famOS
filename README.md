@@ -1,30 +1,44 @@
 # famOS - Family Organization System
 
-A modern family planner application to help families organize their daily lives, manage schedules, and coordinate activities.
+A comprehensive family management application built with Flask that helps families organize their daily lives.
 
 ## Features
 
-- Family calendar and event management
-- Task assignments and chore tracking
-- Shopping lists and meal planning
-- Family member profiles and schedules
-- Shared notes and reminders
-- Real-time updates and notifications
+- User Authentication
+  - Email-based registration and login
+  - Secure password hashing
+  - Session management
 
-## Tech Stack
+- Dashboard
+  - Quick actions for common tasks
+  - Family activity overview
+  - Task tracking
+  - Upcoming events
 
-- Python/Flask backend
-- SQLAlchemy for database management
-- Flask-Login for user authentication
-- Modern, responsive Bootstrap UI
-- SQLite database (development)
+- Family Management
+  - Add and manage family members
+  - Assign roles and permissions
+  - Track family activities
+
+## Technology Stack
+
+- Backend: Python 3.13+ with Flask
+- Database: SQLite with SQLAlchemy
+- Frontend: Bootstrap 5 with Bootstrap Icons
+- Testing: pytest with coverage reporting
+- Logging: Built-in Flask logging with file rotation
 
 ## Installation
 
-1. Clone the repository
-2. Create a virtual environment:
+1. Clone the repository:
 ```bash
-python3 -m venv venv
+git clone <repository-url>
+cd famOS
+```
+
+2. Create and activate a virtual environment:
+```bash
+python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
@@ -41,8 +55,6 @@ cp .env.example .env
 
 5. Initialize the database:
 ```bash
-flask db init
-flask db migrate
 flask db upgrade
 ```
 
@@ -51,16 +63,39 @@ flask db upgrade
 flask run
 ```
 
-## Development
+## Testing
 
-The application follows a modular structure:
-- `famos/` - Main application package
-  - `models/` - Database models
-  - `routes/` - Route handlers
-  - `templates/` - Jinja2 templates
-  - `static/` - CSS, JavaScript, and assets
-  - `utils/` - Utility functions
+Run the test suite:
+```bash
+pytest -v --cov=famos tests/
+```
+
+## Project Structure
+
+```
+famOS/
+├── famos/                  # Application package
+│   ├── models/            # Database models
+│   ├── routes/            # Route handlers
+│   ├── templates/         # Jinja2 templates
+│   ├── static/            # Static files
+│   ├── forms/             # WTForms classes
+│   └── utils/             # Utility functions
+├── tests/                 # Test suite
+├── migrations/            # Database migrations
+├── logs/                  # Application logs
+├── requirements.txt       # Project dependencies
+└── config.py             # Configuration
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 
-MIT License - See LICENSE file for details
+This project is licensed under the MIT License - see the LICENSE file for details.

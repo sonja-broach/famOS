@@ -13,6 +13,7 @@ class User(UserMixin, db.Model):
     first_name = db.Column(db.String(50))
     last_name = db.Column(db.String(50))
     password_hash = db.Column(db.String(128))
+    phone = db.Column(db.String(20))  # Added phone field
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     is_admin = db.Column(db.Boolean, default=False)
     
