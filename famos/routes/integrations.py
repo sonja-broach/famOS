@@ -10,6 +10,10 @@ from famos.config.google import (
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GOOGLE_SCOPES
 )
 from famos.utils.logger import logger
+import os
+
+# Allow OAuth over HTTP for local development
+os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 bp = Blueprint('integrations', __name__, url_prefix='/account/integrations')
 

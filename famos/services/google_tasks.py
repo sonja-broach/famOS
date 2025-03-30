@@ -1,63 +1,210 @@
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from flask import current_app
 from famos.models.integrations import GoogleIntegration
+from datetime import datetime
+import json
+import os
+import logging
+import sys
+import traceback
+from google.auth.transport.requests import Request
+from datetime import timedelta
+from famos.extensions import db
+
+# Get a logger for this module
+logger = logging.getLogger(__name__)
 
 def get_tasks_service(user_id):
     """Get a Google Tasks service instance for the given user."""
+    logger.info(f"=== Getting tasks service for user {user_id} ===")
+    
     integration = GoogleIntegration.query.filter_by(user_id=user_id).first()
-    current_app.logger.info(f"Getting tasks service for user {user_id}. Integration found: {integration is not None}")
+    if not integration:
+        logger.error(f"No integration found for user {user_id}")
+        raise ValueError(f"No integration found for user {user_id}")
     
-    if not integration or not integration.access_token:
-        return None
-    
-    creds = Credentials(
-        token=integration.access_token,
-        refresh_token=integration.refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=current_app.config['GOOGLE_CLIENT_ID'],
-        client_secret=current_app.config['GOOGLE_CLIENT_SECRET'],
-        scopes=['https://www.googleapis.com/auth/tasks.readonly']
-    )
-    current_app.logger.info(f"Created credentials for user {user_id}")
-    
-    return build('tasks', 'v1', credentials=creds)
+    if not integration.access_token:
+        logger.error(f"No access token for user {user_id}")
+        raise ValueError(f"No access token for user {user_id}")
+        
+    try:
+        logger.info(f"Creating credentials with token: {integration.access_token[:10]}...")
+        logger.info(f"Refresh token present: {bool(integration.refresh_token)}")
+        logger.info(f"Token expiry: {integration.token_expiry}")
+        
+        # Check if we have all required config
+        if not current_app.config.get('GOOGLE_CLIENT_ID'):
+            logger.error("Missing GOOGLE_CLIENT_ID in config")
+            raise ValueError("Missing GOOGLE_CLIENT_ID in config")
+        if not current_app.config.get('GOOGLE_CLIENT_SECRET'):
+            logger.error("Missing GOOGLE_CLIENT_SECRET in config")
+            raise ValueError("Missing GOOGLE_CLIENT_SECRET in config")
+            
+        creds = Credentials(
+            token=integration.access_token,
+            refresh_token=integration.refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=current_app.config['GOOGLE_CLIENT_ID'],
+            client_secret=current_app.config['GOOGLE_CLIENT_SECRET'],
+            scopes=['https://www.googleapis.com/auth/tasks.readonly']  # Only request read-only access
+        )
+        
+        # Check if credentials need refresh
+        if integration.token_expiry and integration.token_expiry < datetime.utcnow():
+            logger.info(f"Token expired at {integration.token_expiry}, current time is {datetime.utcnow()}")
+            if not integration.refresh_token:
+                logger.error("No refresh token available")
+                raise ValueError(f"Access token expired and no refresh token available for user {user_id}")
+                
+            logger.info("Attempting to refresh token...")
+            creds.refresh(Request())
+            
+            # Update the integration with new tokens
+            integration.access_token = creds.token
+            integration.token_expiry = datetime.utcnow() + timedelta(seconds=creds.expiry.timestamp() - datetime.utcnow().timestamp())
+            db.session.commit()
+            
+            logger.info(f"Token refreshed successfully. New expiry: {integration.token_expiry}")
+        
+        logger.info("Building tasks service...")
+        service = build('tasks', 'v1', credentials=creds)
+        logger.info("Tasks service built successfully")
+        return service
+        
+    except Exception as e:
+        logger.error(f"Error creating tasks service: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise
 
 def get_user_tasks(user_id):
     """Fetch all tasks from Google Tasks for the given user."""
-    service = get_tasks_service(user_id)
-    if not service:
-        current_app.logger.warning(f"No tasks service available for user {user_id}")
-        return []
+    logger.info(f"=== Starting to fetch tasks for user {user_id} ===")
     
     try:
+        logger.debug("About to call get_tasks_service...")
+        service = get_tasks_service(user_id)
+        logger.debug(f"get_tasks_service returned: {service}")
+        
+        if not service:
+            error_msg = f"Could not create tasks service for user {user_id}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
         # Get all task lists
-        task_lists_result = service.tasklists().list().execute()
-        current_app.logger.info(f"Task lists response: {task_lists_result}")
+        logger.info("Fetching task lists...")
+        try:
+            task_lists_result = service.tasklists().list().execute()
+            logger.debug(f"Raw task lists response: {json.dumps(task_lists_result)}")
+        except Exception as e:
+            logger.error(f"Error fetching task lists: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise
+            
         task_lists = task_lists_result.get('items', [])
+        logger.info(f"Found {len(task_lists)} task lists")
         
         all_tasks = []
         
         # Get tasks from each task list
         for task_list in task_lists:
-            current_app.logger.info(f"Fetching tasks for list: {task_list.get('title')}")
-            tasks_result = service.tasks().list(tasklist=task_list['id']).execute()
-            current_app.logger.info(f"Tasks response for list {task_list.get('title')}: {tasks_result}")
-            tasks = tasks_result.get('items', [])
-            for task in tasks:
-                if task.get('status') != 'completed':  # Only include incomplete tasks
-                    all_tasks.append({
-                        'title': task.get('title', 'Untitled Task'),
-                        'due': task.get('due'),
-                        'notes': task.get('notes'),
-                        'list_name': task_list.get('title', 'Default List'),
-                        'source': 'google',
-                        'id': task.get('id'),
-                        'list_id': task_list.get('id')
-                    })
+            list_id = task_list['id']
+            list_title = task_list['title']
+            logger.info(f"Fetching tasks from list: {list_title} (ID: {list_id})")
+            
+            try:
+                # Get tasks from this list
+                tasks_result = service.tasks().list(tasklist=list_id).execute()
+                logger.debug(f"Raw tasks response for list {list_title}: {json.dumps(tasks_result)}")
+                
+                tasks = tasks_result.get('items', [])
+                logger.info(f"Found {len(tasks)} tasks in list {list_title}")
+                
+                # Process each task
+                for task in tasks:
+                    try:
+                        # Only include non-completed tasks
+                        if task.get('status') == 'completed':
+                            logger.debug(f"Skipping completed task: {task.get('title')}")
+                            continue
+                            
+                        processed_task = {
+                            'title': task.get('title', ''),
+                            'notes': task.get('notes', ''),
+                            'due': task.get('due', ''),
+                            'status': task.get('status', ''),
+                            'list_name': list_title
+                        }
+                        
+                        logger.debug(f"Processed task: {json.dumps(processed_task)}")
+                        all_tasks.append(processed_task)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing task in list {list_title}: {str(e)}")
+                        logger.error(f"Problem task data: {json.dumps(task)}")
+                        logger.error(traceback.format_exc())
+                        continue
+                    
+            except Exception as e:
+                logger.error(f"Error fetching tasks from list {list_title}: {str(e)}")
+                logger.error(traceback.format_exc())
+                continue
+                
+        # Sort tasks by due date
+        all_tasks.sort(key=lambda x: x.get('due', ''))
+        logger.info(f"=== Finished fetching tasks for user {user_id}. Found {len(all_tasks)} tasks ===")
+        logger.debug(f"Final task list: {json.dumps(all_tasks, indent=2)}")
         
-        current_app.logger.info(f"Found {len(all_tasks)} tasks for user {user_id}")
         return all_tasks
+        
     except Exception as e:
-        current_app.logger.error(f"Error fetching Google Tasks: {str(e)}")
-        return []
+        logger.error(f"Error in get_user_tasks: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise
+
+def update_task(user_id, task_list_id, task_id, updates):
+    """Update a task with new information."""
+    logger.info(f"=== Updating task {task_id} for user {user_id} ===")
+    logger.debug(f"Updates to apply: {updates}")
+    
+    try:
+        service = get_tasks_service(user_id)
+        
+        # Get current task to merge with updates
+        current_task = service.tasks().get(
+            tasklist=task_list_id,
+            task=task_id
+        ).execute()
+        
+        # Merge updates with current task
+        current_task.update(updates)
+        
+        # Update the task
+        updated_task = service.tasks().update(
+            tasklist=task_list_id,
+            task=task_id,
+            body=current_task
+        ).execute()
+        
+        logger.info(f"Task {task_id} updated successfully")
+        logger.debug(f"Updated task: {updated_task}")
+        
+        return {
+            'title': updated_task.get('title', ''),
+            'notes': updated_task.get('notes', ''),
+            'due': updated_task.get('due', ''),
+            'status': updated_task.get('status', ''),
+            'list_name': get_task_list_title(user_id, task_list_id)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error updating task: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise
+
+def get_task_list_title(user_id, list_id):
+    """Get the title of a task list by its ID."""
+    service = get_tasks_service(user_id)
+    task_list = service.tasklists().get(tasklist=list_id).execute()
+    return task_list.get('title', '')

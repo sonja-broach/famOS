@@ -3,15 +3,11 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
-from dotenv import load_dotenv
 import os
+import logging
 from config import Config
-from famos.utils.logger import setup_logger
 
-# Load environment variables
-load_dotenv()
-
-# Initialize extensions
+# Initialize Flask extensions
 db = SQLAlchemy()
 migrate = Migrate()
 login_manager = LoginManager()
@@ -20,57 +16,76 @@ login_manager.login_view = 'auth.login'
 login_manager.login_message_category = 'info'
 
 def create_app(config_class=Config):
+    """Create and configure the app"""
     app = Flask(__name__)
     app.config.from_object(config_class)
     
-    # Configuration
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-key-change-this')
-    # Set instance path explicitly for famOS
-    app.instance_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'instance')
-    if not os.path.exists(app.instance_path):
-        os.makedirs(app.instance_path)
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', f'sqlite:///{os.path.join(app.instance_path, "famos.db")}')
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['DEBUG'] = True  # Enable debug mode
-
-    # Initialize extensions
+    # Get logger
+    logger = logging.getLogger('famos')
+    
+    # Initialize Flask extensions
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
     csrf.init_app(app)
-
-    # Set up login manager
-    login_manager.login_view = 'auth.login'
-    login_manager.login_message_category = 'info'
 
     @login_manager.user_loader
     def load_user(user_id):
         from famos.models import User
         return User.query.get(int(user_id))
 
-    # Set up logging
-    setup_logger(app)
-
     # Import models
     from famos.models import User, Family, Task, Contact
     from famos.models.integrations import GoogleIntegration
 
     # Register blueprints
+    logger.info('Registering blueprints...')
     from famos.routes import main, auth, family, tasks, calendar, contacts, account, integrations, dashboard
+    logger.info('Registering main blueprint...')
     app.register_blueprint(main.bp)
+    logger.info(f'Main routes: {[rule.rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("main")]}')
+    
+    logger.info('Registering auth blueprint...')
     app.register_blueprint(auth.bp, url_prefix='/auth')
-    app.register_blueprint(family.bp, url_prefix='/family')
-    app.register_blueprint(tasks.bp, url_prefix='/tasks')
-    app.register_blueprint(calendar.bp, url_prefix='/calendar')
-    app.register_blueprint(contacts.bp, url_prefix='/contacts')
-    app.register_blueprint(account.bp, url_prefix='/account')
-    app.register_blueprint(integrations.bp)
+    logger.info(f'Auth routes: {[rule.rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("auth")]}')
+    
+    logger.info('Registering dashboard blueprint...')
     app.register_blueprint(dashboard.bp)
-
+    logger.info(f'Dashboard routes: {[rule.rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("dashboard")]}')
+    
+    logger.info('Registering family blueprint...')
+    app.register_blueprint(family.bp, url_prefix='/family')
+    logger.info(f'Family routes: {[rule.rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("family")]}')
+    
+    logger.info('Registering tasks blueprint...')
+    app.register_blueprint(tasks.bp, url_prefix='/tasks')
+    logger.info(f'Tasks routes: {[rule.rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("tasks")]}')
+    
+    logger.info('Registering calendar blueprint...')
+    app.register_blueprint(calendar.bp, url_prefix='/calendar')
+    logger.info(f'Calendar routes: {[rule.rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("calendar")]}')
+    
+    logger.info('Registering contacts blueprint...')
+    app.register_blueprint(contacts.bp, url_prefix='/contacts')
+    logger.info(f'Contacts routes: {[rule.rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("contacts")]}')
+    
+    logger.info('Registering account blueprint...')
+    app.register_blueprint(account.bp, url_prefix='/account')
+    logger.info(f'Account routes: {[rule.rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("account")]}')
+    
+    logger.info('Registering integrations blueprint...')
+    app.register_blueprint(integrations.bp)
+    logger.info(f'Integrations routes: {[rule.rule for rule in app.url_map.iter_rules() if rule.endpoint.startswith("integrations")]}')
+    
+    # Log all registered routes
+    logger.info('All registered routes:')
+    for rule in app.url_map.iter_rules():
+        logger.info(f'Route: {rule.rule} -> {rule.endpoint}')
+    
     # Create database tables
     with app.app_context():
         db.create_all()
-
+        
     # Template filters
     @app.template_filter('datetime')
     def format_datetime(value):
@@ -86,4 +101,7 @@ def create_app(config_class=Config):
         except:
             return value
 
+    logger.info('famOS application initialized')
+    logger.info('=== Starting famOS Application ===')
+    
     return app
