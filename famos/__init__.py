@@ -20,9 +20,33 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
     
+    # Get root logger and clear its handlers
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    
     # Get logger
     logger = logging.getLogger('famos')
+    logger.setLevel(logging.DEBUG)
+    logger.handlers.clear()
     
+    # Create handlers
+    console_handler = logging.StreamHandler()
+    file_handler = logging.FileHandler('logs/famos.log')
+    
+    # Set handler levels
+    console_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.DEBUG)
+    
+    # Create formatters and add it to handlers
+    log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    formatter = logging.Formatter(log_format)
+    console_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
+    
+    # Add handlers to the logger
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
     # Initialize Flask extensions
     db.init_app(app)
     migrate.init_app(app, db)

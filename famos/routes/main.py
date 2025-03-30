@@ -1,6 +1,7 @@
-from flask import Blueprint, render_template, redirect, url_for, current_app, request, jsonify
+from flask import Blueprint, render_template, redirect, url_for, current_app, request, jsonify, session
 from flask_login import login_required, current_user
-from famos.services.google_tasks import get_user_tasks, update_task
+from flask_wtf.csrf import generate_csrf
+from famos.services.google_tasks import get_user_tasks, update_task, get_tasks_service
 from famos.models.integrations import GoogleIntegration
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
@@ -61,7 +62,7 @@ def dashboard():
         
         google_tasks = []
         task_lists = []
-        selected_lists = request.args.getlist('list')
+        selected_lists = request.args.getlist('lists') or session.get('selected_lists', [])
         
         if integration:
             logger.debug("Integration exists, checking status...")
@@ -94,24 +95,44 @@ def dashboard():
                         db.session.commit()
                         logger.debug("Access token refreshed successfully")
                     
-                    # Now try to fetch tasks
-                    logger.debug("About to call get_user_tasks...")
-                    google_tasks = get_user_tasks(current_user.id)
+                    # Get task lists before fetching tasks
+                    service = get_tasks_service(current_user.id)
+                    task_lists_result = service.tasklists().list().execute()
+                    task_lists = [{'id': tl['id'], 'title': tl['title']} for tl in task_lists_result.get('items', [])]
+                    task_lists.sort(key=lambda x: x['title'])
+                    
+                    # If no lists selected, default to first list
+                    if not selected_lists and task_lists:
+                        selected_lists = [task_lists[0]['title']]
+                        session['selected_lists'] = selected_lists
+                    
+                    # Store selected lists in session
+                    session['selected_lists'] = selected_lists
+                    
+                    # Now fetch tasks only for selected lists
+                    google_tasks = []
+                    for task_list in task_lists:
+                        if task_list['title'] in selected_lists:
+                            list_tasks = service.tasks().list(tasklist=task_list['id']).execute()
+                            for task in list_tasks.get('items', []):
+                                google_tasks.append({
+                                    'id': task['id'],
+                                    'title': task['title'],
+                                    'status': task['status'],
+                                    'list_id': task_list['id'],
+                                    'list_name': task_list['title'],
+                                    'notes': task.get('notes', ''),
+                                    'due': task.get('due', ''),
+                                    'completed': task.get('completed', ''),
+                                    'parent': task.get('parent', '')
+                                })
+                    
                     logger.debug(f"Retrieved {len(google_tasks)} tasks")
-                    logger.debug(f"Tasks: {json.dumps(google_tasks, indent=2)}")
-                    
-                    # Get unique list names
-                    task_lists = list(set(task['list_name'] for task in google_tasks))
-                    task_lists.sort()
-                    
-                    # Filter tasks by selected lists if any are selected
-                    if selected_lists:
-                        google_tasks = [task for task in google_tasks if task['list_name'] in selected_lists]
+                    logger.debug(f"Selected lists: {selected_lists}")
                     
                     # Add validation of task format
                     validated_tasks = []
                     for task in google_tasks:
-                        logger.debug(f"Validating task: {task}")
                         if not isinstance(task, dict):
                             logger.error(f"Task is not a dictionary: {task}")
                             continue
@@ -138,14 +159,17 @@ def dashboard():
         else:
             logger.debug("No Google integration found for user")
             
-        logger.debug(f"Final tasks to render: {json.dumps(google_tasks, indent=2)}")
         logger.debug("=== DASHBOARD ROUTE END ===")
+        
+        # Generate CSRF token for AJAX requests
+        csrf_token = generate_csrf()
         
         return render_template('dashboard.html',
                              google_tasks=google_tasks,
                              task_lists=task_lists,
-                             selected_lists=selected_lists)
-                             
+                             selected_lists=selected_lists,
+                             csrf_token=csrf_token)
+
     except Exception as e:
         logger.error(f"Error in dashboard route: {str(e)}")
         logger.error(traceback.format_exc())

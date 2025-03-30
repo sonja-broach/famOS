@@ -3,6 +3,9 @@
 {% block title %}Dashboard - famOS{% endblock %}
 
 {% block content %}
+<!-- Add CSRF token in a meta tag -->
+<meta name="csrf-token" content="{{ csrf_token }}">
+
 <div class="container mt-4">
     <div class="row">
         <!-- List Selection -->
@@ -12,17 +15,23 @@
                     <h5 class="mb-0">Task Lists</h5>
                 </div>
                 <div class="card-body">
-                    <form method="get" action="{{ url_for('main.dashboard') }}" class="mb-0">
-                        <div class="d-flex flex-wrap gap-2">
-                            {% for list_name in task_lists %}
+                    <form method="get" action="{{ url_for('main.dashboard') }}" class="mb-0" id="listFilterForm">
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            {% for list in task_lists %}
                             <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="list" value="{{ list_name }}" 
-                                       id="list-{{ loop.index }}" {% if not selected_lists or list_name in selected_lists %}checked{% endif %}>
+                                <input class="form-check-input list-toggle" type="checkbox" name="lists" value="{{ list.title }}" 
+                                       id="list-{{ loop.index }}" {% if not selected_lists or list.title in selected_lists %}checked{% endif %}>
                                 <label class="form-check-label" for="list-{{ loop.index }}">
-                                    {{ list_name }}
+                                    {{ list.title }}
                                 </label>
                             </div>
                             {% endfor %}
+                            <div class="form-check ms-3">
+                                <input class="form-check-input" type="checkbox" id="showCompleted">
+                                <label class="form-check-label" for="showCompleted">
+                                    Show Completed Tasks
+                                </label>
+                            </div>
                             <button type="submit" class="btn btn-primary btn-sm ms-auto">Apply Filter</button>
                         </div>
                     </form>
@@ -40,17 +49,20 @@
                     {% if google_tasks %}
                         <div class="list-group list-group-flush">
                             {% for task in google_tasks %}
-                                <div class="list-group-item task-item" data-task-id="{{ task.id }}" data-list-id="{{ task.list_id }}">
+                                <div class="list-group-item task-item {% if task.status == 'completed' %}completed-task{% endif %}" 
+                                     data-task-id="{{ task.task_id }}" 
+                                     data-list-id="{{ task.list_id }}"
+                                     data-status="{{ task.status }}">
                                     <div class="d-flex align-items-center">
                                         <div class="form-check">
                                             <input class="form-check-input task-status" type="checkbox" 
                                                    {% if task.status == 'completed' %}checked{% endif %}
-                                                   data-task-id="{{ task.id }}"
+                                                   data-task-id="{{ task.task_id }}"
                                                    data-list-id="{{ task.list_id }}">
                                         </div>
                                         <div class="ms-3 flex-grow-1">
                                             <div class="d-flex justify-content-between align-items-center">
-                                                <h6 class="mb-0 {% if task.status == 'completed' %}text-decoration-line-through text-muted{% endif %}">
+                                                <h6 class="mb-0 task-title {% if task.status == 'completed' %}text-decoration-line-through text-muted{% endif %}">
                                                     {{ task.title }}
                                                 </h6>
                                                 <div class="d-flex align-items-center gap-2">
@@ -59,7 +71,7 @@
                                                     {% endif %}
                                                     <span class="badge bg-info">{{ task.list_name }}</span>
                                                     <button class="btn btn-link btn-sm text-decoration-none edit-task p-0 ms-2" 
-                                                            data-task-id="{{ task.id }}"
+                                                            data-task-id="{{ task.task_id }}"
                                                             data-list-id="{{ task.list_id }}"
                                                             data-title="{{ task.title }}"
                                                             data-notes="{{ task.notes }}"
@@ -69,7 +81,9 @@
                                                 </div>
                                             </div>
                                             {% if task.notes %}
-                                                <small class="text-muted d-block mt-1">{{ task.notes }}</small>
+                                                <small class="text-muted d-block mt-1 task-notes {% if task.status == 'completed' %}text-decoration-line-through{% endif %}">
+                                                    {{ task.notes }}
+                                                </small>
                                             {% endif %}
                                         </div>
                                     </div>
@@ -125,6 +139,45 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const editTaskModal = new bootstrap.Modal(document.getElementById('editTaskModal'));
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    const showCompletedCheckbox = document.getElementById('showCompleted');
+    
+    // Load saved preferences
+    const savedShowCompleted = localStorage.getItem('showCompletedTasks') === 'true';
+    showCompletedCheckbox.checked = savedShowCompleted;
+    
+    // Load saved list selections
+    const savedLists = JSON.parse(localStorage.getItem('selectedLists') || '[]');
+    document.querySelectorAll('.list-toggle').forEach(checkbox => {
+        if (savedLists.length > 0) {
+            checkbox.checked = savedLists.includes(checkbox.value);
+        }
+    });
+    
+    // Handle show/hide completed tasks
+    function updateCompletedTasksVisibility() {
+        const showCompleted = showCompletedCheckbox.checked;
+        document.querySelectorAll('.completed-task').forEach(task => {
+            task.style.display = showCompleted ? 'block' : 'none';
+        });
+        localStorage.setItem('showCompletedTasks', showCompleted);
+    }
+    
+    // Save list selections
+    function saveListSelections() {
+        const selectedLists = Array.from(document.querySelectorAll('.list-toggle:checked'))
+            .map(checkbox => checkbox.value);
+        localStorage.setItem('selectedLists', JSON.stringify(selectedLists));
+    }
+    
+    // Initial visibility state
+    updateCompletedTasksVisibility();
+    
+    // Event listeners
+    showCompletedCheckbox.addEventListener('change', updateCompletedTasksVisibility);
+    document.querySelectorAll('.list-toggle').forEach(checkbox => {
+        checkbox.addEventListener('change', saveListSelections);
+    });
     
     // Handle task status changes
     document.querySelectorAll('.task-status').forEach(checkbox => {
@@ -132,15 +185,28 @@ document.addEventListener('DOMContentLoaded', function() {
             const taskId = this.dataset.taskId;
             const listId = this.dataset.listId;
             const status = this.checked ? 'completed' : 'needsAction';
+            const taskItem = this.closest('.task-item');
             
-            // Update the task title style
-            const taskTitle = this.closest('.task-item').querySelector('h6');
-            if (this.checked) {
-                taskTitle.classList.add('text-decoration-line-through', 'text-muted');
-            } else {
-                taskTitle.classList.remove('text-decoration-line-through', 'text-muted');
+            // Update task appearance immediately
+            taskItem.classList.toggle('completed-task', this.checked);
+            taskItem.querySelector('.task-title').classList.toggle('text-decoration-line-through', this.checked);
+            taskItem.querySelector('.task-title').classList.toggle('text-muted', this.checked);
+            taskItem.dataset.status = status;
+            
+            const taskNotes = taskItem.querySelector('.task-notes');
+            if (taskNotes) {
+                taskNotes.classList.toggle('text-decoration-line-through', this.checked);
+                taskNotes.classList.toggle('text-muted', this.checked);
             }
             
+            // Update visibility based on show completed setting
+            if (!showCompletedCheckbox.checked && this.checked) {
+                taskItem.style.display = 'none';
+            } else if (!this.checked) {
+                taskItem.style.display = 'block';
+            }
+            
+            // Send update to server
             updateTask(taskId, listId, { status: status });
         });
     });
@@ -164,7 +230,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Handle save changes button in modal
+    // Handle save changes button
     document.getElementById('saveTaskChanges').addEventListener('click', function() {
         const taskId = document.getElementById('editTaskId').value;
         const listId = document.getElementById('editListId').value;
@@ -187,6 +253,7 @@ document.addEventListener('DOMContentLoaded', function() {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
             },
             body: JSON.stringify({
                 task_id: taskId,

@@ -48,7 +48,7 @@ def get_tasks_service(user_id):
             token_uri="https://oauth2.googleapis.com/token",
             client_id=current_app.config['GOOGLE_CLIENT_ID'],
             client_secret=current_app.config['GOOGLE_CLIENT_SECRET'],
-            scopes=['https://www.googleapis.com/auth/tasks.readonly']  # Only request read-only access
+            scopes=['https://www.googleapis.com/auth/tasks']  # Need full access for updates
         )
         
         # Check if credentials need refresh
@@ -124,20 +124,17 @@ def get_user_tasks(user_id):
                 # Process each task
                 for task in tasks:
                     try:
-                        # Only include non-completed tasks
-                        if task.get('status') == 'completed':
-                            logger.debug(f"Skipping completed task: {task.get('title')}")
-                            continue
-                            
                         processed_task = {
+                            'task_id': task.get('id', ''),
+                            'list_id': list_id,
                             'title': task.get('title', ''),
                             'notes': task.get('notes', ''),
                             'due': task.get('due', ''),
                             'status': task.get('status', ''),
-                            'list_name': list_title
+                            'list_name': list_title,
+                            'completed': task.get('completed', '')
                         }
                         
-                        logger.debug(f"Processed task: {json.dumps(processed_task)}")
                         all_tasks.append(processed_task)
                         
                     except Exception as e:
@@ -151,11 +148,7 @@ def get_user_tasks(user_id):
                 logger.error(traceback.format_exc())
                 continue
                 
-        # Sort tasks by due date
-        all_tasks.sort(key=lambda x: x.get('due', ''))
         logger.info(f"=== Finished fetching tasks for user {user_id}. Found {len(all_tasks)} tasks ===")
-        logger.debug(f"Final task list: {json.dumps(all_tasks, indent=2)}")
-        
         return all_tasks
         
     except Exception as e:
@@ -165,32 +158,35 @@ def get_user_tasks(user_id):
 
 def update_task(user_id, task_list_id, task_id, updates):
     """Update a task with new information."""
-    logger.info(f"=== Updating task {task_id} for user {user_id} ===")
-    logger.debug(f"Updates to apply: {updates}")
+    logger.info(f"=== Updating task {task_id} in list {task_list_id} for user {user_id} ===")
+    logger.debug(f"Updates to apply: {json.dumps(updates)}")
     
     try:
         service = get_tasks_service(user_id)
         
-        # Get current task to merge with updates
-        current_task = service.tasks().get(
-            tasklist=task_list_id,
-            task=task_id
-        ).execute()
+        # First get the current task
+        task = service.tasks().get(tasklist=task_list_id, task=task_id).execute()
+        logger.debug(f"Current task state: {json.dumps(task)}")
         
-        # Merge updates with current task
-        current_task.update(updates)
+        # Apply updates
+        for key, value in updates.items():
+            if value is not None:  # Only update if value is not None
+                task[key] = value
         
         # Update the task
         updated_task = service.tasks().update(
             tasklist=task_list_id,
             task=task_id,
-            body=current_task
+            body=task
         ).execute()
         
-        logger.info(f"Task {task_id} updated successfully")
-        logger.debug(f"Updated task: {updated_task}")
+        logger.info("Task updated successfully")
+        logger.debug(f"Updated task: {json.dumps(updated_task)}")
         
+        # Return processed task
         return {
+            'task_id': updated_task.get('id', ''),
+            'list_id': task_list_id,
             'title': updated_task.get('title', ''),
             'notes': updated_task.get('notes', ''),
             'due': updated_task.get('due', ''),
