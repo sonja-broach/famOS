@@ -3,18 +3,17 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from flask import current_app
 from famos.models.integrations import GoogleIntegration
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 import os
 import logging
 import sys
 import traceback
 from google.auth.transport.requests import Request
-from datetime import timedelta
 from famos.extensions import db
 
 # Get a logger for this module
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('famos.services.google_tasks')
 
 def get_tasks_service(user_id):
     """Get a Google Tasks service instance for the given user."""
@@ -52,21 +51,23 @@ def get_tasks_service(user_id):
         )
         
         # Check if credentials need refresh
-        if integration.token_expiry and integration.token_expiry < datetime.utcnow():
-            logger.info(f"Token expired at {integration.token_expiry}, current time is {datetime.utcnow()}")
-            if not integration.refresh_token:
-                logger.error("No refresh token available")
-                raise ValueError(f"Access token expired and no refresh token available for user {user_id}")
+        if integration.token_expiry:
+            expiry = datetime.fromisoformat(integration.token_expiry).replace(tzinfo=timezone.utc)
+            if expiry < datetime.now(timezone.utc):
+                logger.info(f"Token expired at {expiry}, current time is {datetime.now(timezone.utc)}")
+                if not integration.refresh_token:
+                    logger.error("No refresh token available")
+                    raise ValueError(f"Access token expired and no refresh token available for user {user_id}")
+                    
+                logger.info("Attempting to refresh token...")
+                creds.refresh(Request())
                 
-            logger.info("Attempting to refresh token...")
-            creds.refresh(Request())
-            
-            # Update the integration with new tokens
-            integration.access_token = creds.token
-            integration.token_expiry = datetime.utcnow() + timedelta(seconds=creds.expiry.timestamp() - datetime.utcnow().timestamp())
-            db.session.commit()
-            
-            logger.info(f"Token refreshed successfully. New expiry: {integration.token_expiry}")
+                # Update the integration with new tokens
+                integration.access_token = creds.token
+                integration.token_expiry = creds.expiry.isoformat()
+                db.session.commit()
+                
+                logger.info(f"Token refreshed successfully. New expiry: {integration.token_expiry}")
         
         logger.info("Building tasks service...")
         service = build('tasks', 'v1', credentials=creds)
@@ -77,6 +78,54 @@ def get_tasks_service(user_id):
         logger.error(f"Error creating tasks service: {str(e)}")
         logger.error(traceback.format_exc())
         raise
+
+def standardize_date(date_str):
+    """Convert any date string to our standard format."""
+    if not date_str:
+        return ""
+        
+    logger.debug(f"Standardizing date: {date_str}")
+    
+    try:
+        # Try parsing different formats
+        try:
+            date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%fZ")
+            logger.debug(f"Parsed as format 1: %Y-%m-%dT%H:%M:%S.%fZ")
+        except ValueError:
+            try:
+                date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
+                logger.debug(f"Parsed as format 2: %Y-%m-%dT%H:%M:%SZ")
+            except ValueError:
+                try:
+                    date = datetime.strptime(date_str, "%Y-%m-%d")
+                    logger.debug(f"Parsed as format 3: %Y-%m-%d")
+                except ValueError:
+                    try:
+                        date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S%z")
+                        logger.debug(f"Parsed as format 4: %Y-%m-%dT%H:%M:%S%z")
+                    except ValueError:
+                        try:
+                            date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                            logger.debug(f"Parsed as format 5: %Y-%m-%d %H:%M:%S")
+                        except ValueError:
+                            logger.error(f"Could not parse date: {date_str}")
+                            return date_str
+        
+        # Convert to UTC if it has a timezone
+        if hasattr(date, 'tzinfo') and date.tzinfo is not None:
+            date = date.astimezone(timezone.utc)
+        
+        # Add time if it's just a date
+        if date.hour == 0 and date.minute == 0 and date.second == 0:
+            date = date.replace(hour=12, minute=0)
+        
+        # Convert to standard format
+        result = date.strftime("%Y-%m-%dT%H:%M:%SZ")
+        logger.debug(f"Standardized date: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Error standardizing date {date_str}: {str(e)}")
+        return date_str
 
 def get_user_tasks(user_id):
     """Fetch all tasks from Google Tasks for the given user."""
@@ -124,18 +173,22 @@ def get_user_tasks(user_id):
                 # Process each task
                 for task in tasks:
                     try:
-                        processed_task = {
+                        task_data = {
                             'task_id': task.get('id', ''),
                             'list_id': list_id,
                             'title': task.get('title', ''),
                             'notes': task.get('notes', ''),
-                            'due': task.get('due', ''),
+                            'due': standardize_date(task.get('due', '')),
                             'status': task.get('status', ''),
                             'list_name': list_title,
                             'completed': task.get('completed', '')
                         }
                         
-                        all_tasks.append(processed_task)
+                        # Log the raw task data for debugging
+                        logger.debug(f"Raw task data: {task}")
+                        logger.debug(f"Processed task data: {task_data}")
+                        
+                        all_tasks.append(task_data)
                         
                     except Exception as e:
                         logger.error(f"Error processing task in list {list_title}: {str(e)}")
@@ -183,16 +236,8 @@ def update_task(user_id, task_list_id, task_id, updates):
         logger.info("Task updated successfully")
         logger.debug(f"Updated task: {json.dumps(updated_task)}")
         
-        # Return processed task
-        return {
-            'task_id': updated_task.get('id', ''),
-            'list_id': task_list_id,
-            'title': updated_task.get('title', ''),
-            'notes': updated_task.get('notes', ''),
-            'due': updated_task.get('due', ''),
-            'status': updated_task.get('status', ''),
-            'list_name': get_task_list_title(user_id, task_list_id)
-        }
+        # Return raw task response
+        return updated_task
         
     except Exception as e:
         logger.error(f"Error updating task: {str(e)}")

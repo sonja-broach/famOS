@@ -3,10 +3,47 @@
 {% block title %}Dashboard - famOS{% endblock %}
 
 {% block content %}
-<!-- Add CSRF token in a meta tag -->
-<meta name="csrf-token" content="{{ csrf_token }}">
-
 <div class="container mt-4">
+    {% if error_message %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        {{ error_message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
+
+    {% if not has_integration %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Connect with Google</h5>
+                    <p class="card-text">Connect your Google account to manage your tasks.</p>
+                    <a href="{{ url_for('auth.google_auth') }}" class="btn btn-primary">
+                        <i class="fab fa-google me-2"></i>Connect with Google
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_integration and not integration_connected %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body text-center">
+                    <h5 class="card-title">Reconnect Google Account</h5>
+                    <p class="card-text">Your Google account needs to be reconnected.</p>
+                    <a href="{{ url_for('auth.google_auth') }}" class="btn btn-warning">
+                        <i class="fab fa-google me-2"></i>Reconnect Google Account
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_integration and integration_connected %}
     <div class="row">
         <!-- List Selection -->
         <div class="col-12 mb-4">
@@ -19,8 +56,8 @@
                         <div class="d-flex flex-wrap gap-2 align-items-center">
                             {% for list in task_lists %}
                             <div class="form-check">
-                                <input class="form-check-input list-toggle" type="checkbox" name="lists" value="{{ list.title }}" 
-                                       id="list-{{ loop.index }}" {% if not selected_lists or list.title in selected_lists %}checked{% endif %}>
+                                <input class="form-check-input list-toggle" type="checkbox" name="lists" value="{{ list.id }}" 
+                                       id="list-{{ loop.index }}" {% if not selected_lists or list.id in selected_lists %}checked{% endif %}>
                                 <label class="form-check-label" for="list-{{ loop.index }}">
                                     {{ list.title }}
                                 </label>
@@ -46,84 +83,84 @@
                     <h5 class="mb-0">Tasks</h5>
                 </div>
                 <div class="card-body p-0">
-                    {% if google_tasks %}
+                    {% if tasks %}
                         <div class="list-group list-group-flush">
-                            {% for task in google_tasks %}
-                                <div class="list-group-item task-item {% if task.status == 'completed' %}completed-task{% endif %}" 
-                                     data-task-id="{{ task.task_id }}" 
-                                     data-list-id="{{ task.list_id }}"
-                                     data-status="{{ task.status }}">
-                                    <div class="d-flex align-items-center">
-                                        <div class="form-check">
-                                            <input class="form-check-input task-status" type="checkbox" 
-                                                   {% if task.status == 'completed' %}checked{% endif %}
-                                                   data-task-id="{{ task.task_id }}"
-                                                   data-list-id="{{ task.list_id }}">
-                                        </div>
-                                        <div class="ms-3 flex-grow-1">
-                                            <div class="d-flex justify-content-between align-items-center">
-                                                <h6 class="mb-0 task-title {% if task.status == 'completed' %}text-decoration-line-through text-muted{% endif %}">
-                                                    {{ task.title }}
-                                                </h6>
-                                                <div class="d-flex align-items-center gap-2">
-                                                    {% if task.due %}
-                                                        <small class="text-muted">Due: {{ task.due[:10] }}</small>
-                                                    {% endif %}
-                                                    <span class="badge bg-info">{{ task.list_name }}</span>
-                                                    <button class="btn btn-link btn-sm text-decoration-none edit-task p-0 ms-2" 
-                                                            data-task-id="{{ task.task_id }}"
-                                                            data-list-id="{{ task.list_id }}"
-                                                            data-title="{{ task.title }}"
-                                                            data-notes="{{ task.notes }}"
-                                                            data-due="{{ task.due[:10] if task.due else '' }}">
-                                                        <i class="bi bi-pencil-square"></i>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            {% if task.notes %}
-                                                <small class="text-muted d-block mt-1 task-notes {% if task.status == 'completed' %}text-decoration-line-through{% endif %}">
-                                                    {{ task.notes }}
-                                                </small>
+                            {% for task in tasks %}
+                            <div class="list-group-item task-item {% if task.status == 'completed' %}completed-task{% endif %}" 
+                                 data-task-id="{{ task.task_id }}" 
+                                 data-list-id="{{ task.list_id }}"
+                                 data-task-title="{{ task.title }}"
+                                 data-task-notes="{{ task.notes }}"
+                                 data-task-due="{{ task.due }}">
+                                <div class="d-flex align-items-center">
+                                    <div class="form-check">
+                                        <input class="form-check-input task-toggle" type="checkbox" 
+                                               {% if task.status == 'completed' %}checked{% endif %}
+                                               data-task-id="{{ task.task_id }}"
+                                               data-list-id="{{ task.list_id }}">
+                                        <label class="form-check-label">
+                                            <span class="task-title {% if task.status == 'completed' %}text-decoration-line-through{% endif %}">
+                                                {{ task.title }}
+                                            </span>
+                                            {% if task.due %}
+                                            <small class="text-muted ms-2">
+                                                <i class="fas fa-calendar"></i> {{ task.due|format_date }}
+                                            </small>
                                             {% endif %}
-                                        </div>
+                                            {% if task.notes %}
+                                            <br>
+                                            <small class="text-muted notes-preview">
+                                                {{ task.notes[:100] }}{% if task.notes|length > 100 %}...{% endif %}
+                                            </small>
+                                            {% endif %}
+                                        </label>
+                                    </div>
+                                    <div class="ms-auto">
+                                        <button class="btn btn-sm btn-outline-primary edit-task-btn" 
+                                                data-bs-toggle="modal" 
+                                                data-bs-target="#editTaskModal">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
                                     </div>
                                 </div>
+                            </div>
                             {% endfor %}
                         </div>
                     {% else %}
-                        <p class="text-muted mb-0 p-3">No tasks found.</p>
+                        <div class="text-center py-4">
+                            <p class="mb-0">No tasks found.</p>
+                        </div>
                     {% endif %}
                 </div>
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
 
 <!-- Edit Task Modal -->
-<div class="modal fade" id="editTaskModal" tabindex="-1">
+<div class="modal fade" id="editTaskModal" tabindex="-1" aria-labelledby="editTaskModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Edit Task</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title" id="editTaskModalLabel">Edit Task</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <form id="editTaskForm">
-                    <input type="hidden" id="editTaskId">
-                    <input type="hidden" id="editListId">
-                    <div class="mb-3">
-                        <label class="form-label">Title</label>
-                        <input type="text" class="form-control" id="editTitle" readonly>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Notes</label>
-                        <textarea class="form-control" id="editNotes" rows="3"></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Due Date</label>
-                        <input type="date" class="form-control" id="editDue">
-                    </div>
-                </form>
+                <input type="hidden" id="editTaskId">
+                <input type="hidden" id="editListId">
+                <div class="mb-3">
+                    <label class="form-label">Task</label>
+                    <p id="editTaskTitle" class="form-control-plaintext"></p>
+                </div>
+                <div class="mb-3">
+                    <label for="editTaskNotes" class="form-label">Notes</label>
+                    <textarea class="form-control" id="editTaskNotes" rows="3"></textarea>
+                </div>
+                <div class="mb-3">
+                    <label for="editTaskDue" class="form-label">Due Date</label>
+                    <input type="datetime-local" class="form-control" id="editTaskDue">
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -137,36 +174,49 @@
 
 {% block scripts %}
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const editTaskModal = new bootstrap.Modal(document.getElementById('editTaskModal'));
-    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-    const showCompletedCheckbox = document.getElementById('showCompleted');
+$(document).ready(function() {
+    // Initialize Bootstrap modal
+    const editTaskModal = document.getElementById('editTaskModal');
     
-    // Load saved preferences
-    const savedShowCompleted = localStorage.getItem('showCompletedTasks') === 'true';
-    showCompletedCheckbox.checked = savedShowCompleted;
-    
-    // Load saved list selections
-    const savedLists = JSON.parse(localStorage.getItem('selectedLists') || '[]');
-    document.querySelectorAll('.list-toggle').forEach(checkbox => {
-        if (savedLists.length > 0) {
-            checkbox.checked = savedLists.includes(checkbox.value);
-        }
+    // Handle modal open
+    editTaskModal.addEventListener('show.bs.modal', function(event) {
+        const button = event.relatedTarget;
+        const taskItem = $(button).closest('.task-item');
+        const taskId = taskItem.data('task-id');
+        const listId = taskItem.data('list-id');
+        const title = taskItem.data('task-title');
+        const notes = taskItem.data('task-notes') || '';
+        const dueText = taskItem.data('task-due') || '';
+        
+        console.log('Opening modal with:', {
+            taskId,
+            listId,
+            title,
+            notes,
+            dueText
+        });
+        
+        // Populate modal
+        $('#editTaskId').val(taskId);
+        $('#editListId').val(listId);
+        $('#editTaskTitle').text(title);
+        $('#editTaskNotes').val(notes);
+        $('#editTaskDue').val(dueText);
     });
     
-    // Handle show/hide completed tasks
+    // Function to update completed tasks visibility
     function updateCompletedTasksVisibility() {
-        const showCompleted = showCompletedCheckbox.checked;
-        document.querySelectorAll('.completed-task').forEach(task => {
-            task.style.display = showCompleted ? 'block' : 'none';
-        });
-        localStorage.setItem('showCompletedTasks', showCompleted);
+        const showCompleted = $('#showCompleted').prop('checked');
+        $('.completed-task').toggle(showCompleted);
+        localStorage.setItem('showCompleted', showCompleted);
     }
     
-    // Save list selections
+    // Function to save list selections
     function saveListSelections() {
-        const selectedLists = Array.from(document.querySelectorAll('.list-toggle:checked'))
-            .map(checkbox => checkbox.value);
+        const selectedLists = [];
+        $('.list-toggle:checked').each(function() {
+            selectedLists.push($(this).val());
+        });
         localStorage.setItem('selectedLists', JSON.stringify(selectedLists));
     }
     
@@ -174,107 +224,191 @@ document.addEventListener('DOMContentLoaded', function() {
     updateCompletedTasksVisibility();
     
     // Event listeners
-    showCompletedCheckbox.addEventListener('change', updateCompletedTasksVisibility);
-    document.querySelectorAll('.list-toggle').forEach(checkbox => {
-        checkbox.addEventListener('change', saveListSelections);
-    });
+    $('#showCompleted').change(updateCompletedTasksVisibility);
+    $('.list-toggle').change(saveListSelections);
     
-    // Handle task status changes
-    document.querySelectorAll('.task-status').forEach(checkbox => {
-        checkbox.addEventListener('change', function() {
-            const taskId = this.dataset.taskId;
-            const listId = this.dataset.listId;
-            const status = this.checked ? 'completed' : 'needsAction';
-            const taskItem = this.closest('.task-item');
-            
-            // Update task appearance immediately
-            taskItem.classList.toggle('completed-task', this.checked);
-            taskItem.querySelector('.task-title').classList.toggle('text-decoration-line-through', this.checked);
-            taskItem.querySelector('.task-title').classList.toggle('text-muted', this.checked);
-            taskItem.dataset.status = status;
-            
-            const taskNotes = taskItem.querySelector('.task-notes');
-            if (taskNotes) {
-                taskNotes.classList.toggle('text-decoration-line-through', this.checked);
-                taskNotes.classList.toggle('text-muted', this.checked);
-            }
-            
-            // Update visibility based on show completed setting
-            if (!showCompletedCheckbox.checked && this.checked) {
-                taskItem.style.display = 'none';
-            } else if (!this.checked) {
-                taskItem.style.display = 'block';
-            }
-            
-            // Send update to server
-            updateTask(taskId, listId, { status: status });
-        });
-    });
-    
-    // Handle edit button clicks
-    document.querySelectorAll('.edit-task').forEach(button => {
-        button.addEventListener('click', function() {
-            const taskId = this.dataset.taskId;
-            const listId = this.dataset.listId;
-            const title = this.dataset.title;
-            const notes = this.dataset.notes;
-            const due = this.dataset.due;
-            
-            document.getElementById('editTaskId').value = taskId;
-            document.getElementById('editListId').value = listId;
-            document.getElementById('editTitle').value = title;
-            document.getElementById('editNotes').value = notes;
-            document.getElementById('editDue').value = due;
-            
-            editTaskModal.show();
-        });
-    });
-    
-    // Handle save changes button
-    document.getElementById('saveTaskChanges').addEventListener('click', function() {
-        const taskId = document.getElementById('editTaskId').value;
-        const listId = document.getElementById('editListId').value;
-        const notes = document.getElementById('editNotes').value;
-        const due = document.getElementById('editDue').value;
+    // Function to update task status
+    $(document).on('change', '.task-toggle', function() {
+        const checkbox = $(this);
+        const taskItem = checkbox.closest('.task-item');
+        const taskId = checkbox.data('task-id');
+        const listId = checkbox.data('list-id');
+        const isCompleted = checkbox.prop('checked');
         
-        updateTask(taskId, listId, {
-            notes: notes,
-            due: due ? new Date(due).toISOString() : null
-        }).then(() => {
-            editTaskModal.hide();
-            // Reload the page to show updated task
-            window.location.reload();
+        console.log('Toggling task:', {
+            taskId,
+            listId,
+            isCompleted
+        });
+        
+        const requestData = {
+            task_id: taskId,
+            task_list_id: listId,
+            status: isCompleted ? 'completed' : 'needsAction'
+        };
+        
+        const csrfToken = $('meta[name="csrf-token"]').attr('content');
+        
+        $.ajax({
+            url: '/tasks/update',
+            type: 'POST',
+            contentType: 'application/json',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Accept': 'application/json'
+            },
+            data: JSON.stringify(requestData),
+            success: function(response) {
+                console.log('Success response:', response);
+                if (response.success) {
+                    // Toggle task appearance
+                    taskItem.toggleClass('completed-task', isCompleted);
+                    taskItem.find('.task-title').toggleClass('text-decoration-line-through', isCompleted);
+                    
+                    // Hide task if completed and "Show Completed" is unchecked
+                    if (isCompleted && !$('#showCompleted').prop('checked')) {
+                        taskItem.fadeOut();
+                    }
+                } else {
+                    console.error('Error updating task:', response.error);
+                    alert('Error updating task: ' + response.error);
+                    // Revert checkbox state
+                    checkbox.prop('checked', !isCompleted);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('AJAX error:', xhr.responseText);
+                console.error('Status:', status);
+                console.error('Error:', error);
+                alert('Error updating task: ' + error);
+                // Revert checkbox state
+                checkbox.prop('checked', !isCompleted);
+            }
         });
     });
     
-    // Function to send update requests
-    function updateTask(taskId, listId, updates) {
-        return fetch('/tasks/update', {
-            method: 'POST',
+    // Save task changes
+    $('#saveTaskChanges').click(function() {
+        const taskId = $('#editTaskId').val();
+        const listId = $('#editListId').val();
+        const notes = $('#editTaskNotes').val();
+        const due = $('#editTaskDue').val();
+        
+        console.log('Saving task changes:', {
+            taskId,
+            listId,
+            notes,
+            due
+        });
+        
+        const updates = {};
+        
+        // Only include non-empty values
+        if (notes) {
+            updates.notes = notes;
+        }
+        if (due) {
+            updates.due = due;
+        }
+        
+        console.log('Updates object:', updates);
+        
+        // Create request data with task_id and task_list_id separate from updates
+        const requestData = {
+            task_id: taskId,
+            task_list_id: listId,
+            ...updates
+        };
+        
+        console.log('Request data:', requestData);
+        
+        const csrfToken = $('meta[name="csrf-token"]').attr('content');
+        console.log('CSRF token:', csrfToken);
+        
+        $.ajax({
+            url: '/tasks/update',
+            type: 'POST',
+            contentType: 'application/json',
             headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrfToken
+                'X-CSRFToken': csrfToken,
+                'Accept': 'application/json'
             },
-            body: JSON.stringify({
-                task_id: taskId,
-                task_list_id: listId,
-                ...updates
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                alert('Error updating task: ' + data.error);
-                throw new Error(data.error);
+            data: JSON.stringify(requestData),
+            success: function(response) {
+                console.log('Success response:', response);
+                if (response.success) {
+                    location.reload();
+                } else {
+                    console.error('Error updating task:', response.error);
+                    alert('Error updating task: ' + response.error);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('AJAX error:', xhr.responseText);
+                console.error('Status:', status);
+                console.error('Error:', error);
+                alert('Error updating task: ' + error);
             }
-            return data;
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Error updating task');
-            throw error;
+        });
+        
+        $('#editTaskModal').modal('hide');
+    });
+    
+    // Load saved list selections
+    const savedLists = JSON.parse(localStorage.getItem('selectedLists') || '[]');
+    if (savedLists.length > 0) {
+        $('.list-toggle').each(function() {
+            $(this).prop('checked', savedLists.includes($(this).val()));
         });
     }
+    
+    // Task checkbox handling
+    $(document).on('click', '.task-checkbox', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const taskItem = $(this).closest('.task-item');
+        const taskId = taskItem.data('task-id');
+        const listId = taskItem.data('list-id');
+        const isCompleted = !taskItem.hasClass('completed-task');
+        
+        // Toggle icon
+        $(this).find('i').toggleClass('fa-square fa-check-square');
+        
+        const requestData = {
+            task_id: taskId,
+            task_list_id: listId,
+            status: isCompleted ? 'completed' : 'needsAction'
+        };
+        
+        const csrfToken = $('meta[name="csrf-token"]').attr('content');
+        
+        $.ajax({
+            url: '/tasks/update',
+            type: 'POST',
+            contentType: 'application/json',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Accept': 'application/json'
+            },
+            data: JSON.stringify(requestData),
+            success: function(response) {
+                console.log('Success response:', response);
+                if (response.success) {
+                    taskItem.toggleClass('completed-task', isCompleted);
+                    taskItem.find('.task-title').toggleClass('text-decoration-line-through', isCompleted);
+                } else {
+                    console.error('Error updating task:', response.error);
+                    alert('Error updating task: ' + response.error);
+                }
+            },
+            error: function(xhr, status, error) {
+                console.error('AJAX error:', xhr.responseText);
+                console.error('Status:', status);
+                console.error('Error:', error);
+                alert('Error updating task: ' + error);
+            }
+        });
+    });
 });
 </script>
 {% endblock %}

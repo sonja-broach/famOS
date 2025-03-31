@@ -3,21 +3,23 @@ from flask_login import login_user, current_user
 from flask import request, url_for
 from famos import create_app, db
 from famos.models.user import User
+from famos.models.family import Family
 from famos.models.integrations import GoogleIntegration
 from unittest.mock import patch, MagicMock, PropertyMock
 from datetime import datetime, timedelta
+from pytz import UTC
 
 @pytest.fixture(scope='function')
 def app():
-    app = create_app()
-    app.config.update({
+    app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
         'WTF_CSRF_ENABLED': False,
         'SECRET_KEY': 'test-key',
         'LOGIN_DISABLED': False,
         'GOOGLE_CLIENT_ID': 'test-client-id',
-        'GOOGLE_CLIENT_SECRET': 'test-client-secret'
+        'GOOGLE_CLIENT_SECRET': 'test-client-secret',
+        'SERVER_NAME': 'localhost'  # Add this to fix URL generation
     })
     
     with app.app_context():
@@ -26,21 +28,77 @@ def app():
         db.session.remove()
         db.drop_all()
 
+@pytest.fixture
+def authenticated_client(client, app):
+    with app.test_request_context():
+        # Create test user
+        user = User(email='test@example.com', first_name='Test', last_name='User')
+        user.set_password('password')
+        db.session.add(user)
+        db.session.flush()
+        
+        # Create default family
+        family = Family(user_id=user.id, name='Test Family')
+        db.session.add(family)
+        db.session.commit()
+        
+        # Log in the user
+        with client.session_transaction() as session:
+            session['user_id'] = user.id
+            session['_fresh'] = True
+            session['selected_lists'] = ['Test List 1']  # Set default selected list
+    
+    return client
+
+@pytest.fixture
+def integration(app, authenticated_client):
+    with app.test_request_context():
+        user = User.query.filter_by(email='test@example.com').first()
+        integration = GoogleIntegration(
+            user_id=user.id,
+            access_token='test_token',
+            refresh_token='test_refresh',
+            token_expiry=datetime.now(UTC).replace(microsecond=0).isoformat(),  # Simple ISO format
+            tasks_enabled=True
+        )
+        db.session.add(integration)
+        db.session.commit()
+        return integration
+
 @pytest.fixture(scope='function')
 def client(app):
     return app.test_client()
 
 @pytest.fixture(scope='function')
 def test_user(app):
-    user = User(email='test@example.com', first_name='Test')
+    user = User(email='test@example.com', first_name='Test', last_name='User')
     with app.app_context():
         db.session.add(user)
+        db.session.flush()
+        
+        # Create default family
+        family = Family(user_id=user.id, name='Test Family')
+        db.session.add(family)
         db.session.commit()
+        
         # Refresh user to ensure it's attached to session
         db.session.refresh(user)
         return user
 
-@pytest.fixture(scope='function')
+@pytest.fixture
+def authenticated_user(app, client, test_user):
+    with app.test_request_context():
+        login_user(test_user)
+    
+    # Create a test client that will have the logged in user
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess['_user_id'] = test_user.id
+        sess['_fresh'] = True
+    
+    return test_user
+
+@pytest.fixture
 def auth_client(app, client, test_user):
     with app.test_request_context():
         login_user(test_user)
@@ -53,128 +111,192 @@ def auth_client(app, client, test_user):
     
     return client
 
+@pytest.fixture
+def mock_google_service():
+    mock_service = MagicMock()
+    
+    # Mock tasklists().list().execute()
+    tasklists_mock = MagicMock()
+    tasklists_mock.list = MagicMock()
+    tasklists_mock.list.return_value = MagicMock()
+    tasklists_mock.list.return_value.execute = MagicMock(return_value={
+        'items': [
+            {'id': 'list1', 'title': 'Test List 1'},
+            {'id': 'list2', 'title': 'Test List 2'}
+        ]
+    })
+    mock_service.tasklists = MagicMock(return_value=tasklists_mock)
+    
+    # Mock tasks().list().execute()
+    tasks_mock = MagicMock()
+    tasks_mock.list = MagicMock()
+    tasks_mock.list.return_value = MagicMock()
+    tasks_mock.list.return_value.execute = MagicMock(return_value={
+        'items': [
+            {
+                'id': 'task1',
+                'title': 'Test Task 1',
+                'status': 'needsAction',
+                'notes': 'Test notes',
+                'due': datetime.now(UTC).replace(microsecond=0).isoformat(),
+                'completed': None,
+                'parent': None
+            }
+        ]
+    })
+    mock_service.tasks = MagicMock(return_value=tasks_mock)
+    
+    return mock_service
+
 def test_dashboard_unauthenticated(client):
-    """Test that unauthenticated users are redirected to login"""
+    """Test that unauthenticated users are redirected to login."""
     response = client.get('/dashboard')
-    assert response.status_code == 302  # Should redirect to login
-    assert '/login' in response.location
+    assert response.status_code == 302
+    assert '/auth/login' in response.headers['Location']
 
-def test_dashboard_authenticated_no_integration(app, auth_client):
-    """Test dashboard access for authenticated user without Google integration"""
-    response = auth_client.get('/dashboard')
-    assert response.status_code == 200
-    assert b'No pending tasks' in response.data
-
-@patch('famos.routes.dashboard.GoogleIntegration')
-def test_dashboard_with_disconnected_integration(mock_integration, app, auth_client):
-    """Test dashboard with a disconnected Google integration"""
-    integration = MagicMock()
-    integration.is_connected.return_value = False
-    mock_integration.query.filter_by.return_value.first.return_value = integration
+def test_dashboard_authenticated_no_integration(auth_client, authenticated_user):
+    """Test dashboard when user has no Google integration."""
+    # Remove existing integration
+    with auth_client.application.app_context():
+        integration = GoogleIntegration.query.filter_by(user_id=authenticated_user.id).first()
+        if integration:
+            db.session.delete(integration)
+            db.session.commit()
     
     response = auth_client.get('/dashboard')
     assert response.status_code == 200
-    assert b'No pending tasks' in response.data
+    assert b'Connect with Google' in response.data
+    assert b'Connect your Google account to manage your tasks.' in response.data
 
-@patch('flask_login.login_required')  # Mock login_required at module level
-@patch('flask_login.current_user')  # Mock current_user at module level
-@patch('famos.routes.dashboard.GoogleIntegration')
-@patch('famos.services.google_tasks.get_user_tasks')  # Mock where it's defined
-@patch('famos.services.google_tasks.get_tasks_service')  # Mock the service creation
-@patch('googleapiclient.discovery.build')  # Mock the Google API client
-def test_dashboard_with_connected_integration(mock_build, mock_tasks_service, mock_get_user_tasks, mock_integration, mock_current_user, mock_login_required, app, test_user):
-    """Test dashboard with a connected Google integration"""
-    # Mock login_required to do nothing
-    mock_login_required.return_value = lambda x: x
+def test_dashboard_with_disconnected_integration(auth_client, authenticated_user):
+    """Test dashboard when Google integration is disconnected."""
+    # Create a disconnected integration
+    with auth_client.application.app_context():
+        integration = GoogleIntegration(
+            user_id=authenticated_user.id,
+            access_token=None,
+            refresh_token=None,
+            tasks_enabled=True
+        )
+        db.session.add(integration)
+        db.session.commit()
     
-    # Mock current_user
-    mock_current_user.id = test_user.id
-    mock_current_user.first_name = test_user.first_name
-    mock_current_user.is_authenticated = True
+    response = auth_client.get('/dashboard')
+    assert response.status_code == 200
+    assert b'Reconnect Google Account' in response.data
+    assert b'Your Google account needs to be reconnected.' in response.data
+
+def test_dashboard_with_connected_integration(auth_client, authenticated_user, mock_google_service):
+    """Test dashboard when Google integration is connected."""
+    # Create a connected integration
+    with auth_client.application.app_context():
+        integration = GoogleIntegration(
+            user_id=authenticated_user.id,
+            access_token='test_token',
+            refresh_token='test_refresh',
+            token_expiry=(datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0).isoformat(),
+            tasks_enabled=True
+        )
+        db.session.add(integration)
+        db.session.commit()
     
-    # Create the integration instance
-    integration = MagicMock()
-    
-    # Set up the integration properties
-    type(integration).user_id = PropertyMock(return_value=test_user.id)
-    type(integration).access_token = PropertyMock(return_value='test_token')
-    type(integration).refresh_token = PropertyMock(return_value='test_refresh')
-    type(integration).token_expiry = PropertyMock(return_value=datetime.now() + timedelta(hours=1))
-    type(integration).tasks_enabled = PropertyMock(return_value=True)  # Make sure tasks are enabled
-    integration.is_connected.return_value = True
-    
-    # Mock the integration query
-    mock_query = MagicMock()
-    mock_query.filter_by.return_value.first.return_value = integration
-    mock_integration.query = mock_query
-    
-    # Mock the tasks that get_user_tasks will return
-    mock_tasks = [
-        {
-            'title': 'Test Task 1',
-            'due': '2025-03-30T00:00:00Z',
-            'notes': 'Test notes',
-            'list_name': 'Test List',
-            'list_id': 'list1',
-            'status': 'needsAction'
-        }
-    ]
-    
-    # Set up get_user_tasks mock to return the tasks
-    mock_get_user_tasks.return_value = mock_tasks
-    
-    # Create a test client
-    client = app.test_client()
-    
-    # Mock Flask app config
-    app.config['GOOGLE_CLIENT_ID'] = 'test_client_id'
-    app.config['GOOGLE_CLIENT_SECRET'] = 'test_client_secret'
-    
-    # Make the request in the app context
-    with app.app_context():
-        with client.session_transaction() as sess:
-            sess['_user_id'] = test_user.id
-            sess['_fresh'] = True
-        
-        # Print debug information
-        print(f"\nDebug Information:")
-        print(f"User ID in test: {test_user.id}")
-        print(f"Current user ID: {mock_current_user.id}")
-        print(f"Integration user_id: {integration.user_id}")
-        print(f"User is authenticated: {mock_current_user.is_authenticated}")
-        print(f"Tasks enabled: {integration.tasks_enabled}")  # Add tasks_enabled debug info
-        print(f"Integration is connected: {integration.is_connected()}")
-        
-        response = client.get('/dashboard')
-        
-        print(f"get_user_tasks called: {mock_get_user_tasks.called}")
-        print(f"get_user_tasks call count: {mock_get_user_tasks.call_count}")
-        print(f"get_user_tasks call args: {mock_get_user_tasks.call_args_list}")
-        print(f"Integration is_connected() called: {integration.is_connected.called}")
-        print(f"Integration is_connected() call count: {integration.is_connected.call_count}")
-        print(f"Integration is_connected() call args: {integration.is_connected.call_args_list}")
-        print(f"Response data: {response.data.decode('utf-8')}")
-        
-        # Verify get_user_tasks was called with the correct user ID
-        assert mock_get_user_tasks.called, "get_user_tasks was not called"
-        mock_get_user_tasks.assert_called_once_with(test_user.id)
-        
+    with patch('famos.routes.main.get_tasks_service', return_value=mock_google_service), \
+         patch('famos.routes.main.get_user_tasks', return_value=[{
+             'id': 'task1',
+             'title': 'Test Task 1',
+             'status': 'needsAction',
+             'notes': 'Test notes',
+             'due': datetime.now(UTC).replace(microsecond=0).isoformat(),
+             'completed': None,
+             'parent': None,
+             'list_id': 'list1',
+             'list_name': 'Test List 1'
+         }]):
+        response = auth_client.get('/dashboard')
         assert response.status_code == 200
+        # Test list selection
+        assert b'Test List 1' in response.data
+        assert b'Test List 2' in response.data
+        # Test task display
         assert b'Test Task 1' in response.data
         assert b'Test notes' in response.data
+        # Test task controls
+        assert b'Show Completed Tasks' in response.data
+        assert b'Apply Filter' in response.data
 
-@patch('famos.routes.dashboard.get_user_tasks')  # Mock where it's imported
-@patch('famos.routes.dashboard.GoogleIntegration')
-def test_dashboard_with_task_fetch_error(mock_integration, mock_get_tasks, app, auth_client):
-    """Test dashboard when task fetching fails"""
-    # Mock the integration
-    integration = MagicMock()
-    integration.is_connected.return_value = True
-    mock_integration.query.filter_by.return_value.first.return_value = integration
+def test_dashboard_with_task_fetch_error(auth_client, authenticated_user, mock_google_service):
+    """Test dashboard when there's an error fetching tasks."""
+    # Create a connected integration
+    with auth_client.application.app_context():
+        integration = GoogleIntegration(
+            user_id=authenticated_user.id,
+            access_token='test_token',
+            refresh_token='test_refresh',
+            token_expiry=(datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0).isoformat(),
+            tasks_enabled=True
+        )
+        db.session.add(integration)
+        db.session.commit()
     
-    # Mock task fetching error
-    mock_get_tasks.side_effect = Exception('Failed to fetch tasks')
+    # Mock service to raise an error
+    tasklists_mock = MagicMock()
+    tasklists_mock.list = MagicMock()
+    tasklists_mock.list.return_value = MagicMock()
+    tasklists_mock.list.return_value.execute = MagicMock(side_effect=Exception('API Error'))
+    mock_google_service.tasklists = MagicMock(return_value=tasklists_mock)
+    
+    with patch('famos.routes.main.get_tasks_service', return_value=mock_google_service), \
+         patch('famos.routes.main.get_user_tasks', side_effect=Exception('API Error')):
+        response = auth_client.get('/dashboard')
+        assert response.status_code == 200
+        assert b'Error fetching tasks' in response.data
+
+def test_dashboard_with_disabled_tasks(auth_client, authenticated_user):
+    """Test dashboard when tasks are disabled."""
+    # Create integration with tasks disabled
+    with auth_client.application.app_context():
+        integration = GoogleIntegration(
+            user_id=authenticated_user.id,
+            access_token='test_token',
+            refresh_token='test_refresh',
+            token_expiry=(datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0).isoformat(),
+            tasks_enabled=False
+        )
+        db.session.add(integration)
+        db.session.commit()
     
     response = auth_client.get('/dashboard')
     assert response.status_code == 200
-    assert b'No pending tasks' in response.data  # Should show empty tasks on error
+    assert b'Tasks are not enabled for this integration' in response.data
+
+def test_dashboard_with_expired_token(auth_client, authenticated_user, mock_google_service):
+    """Test dashboard when access token is expired."""
+    # Create integration with expired token
+    with auth_client.application.app_context():
+        integration = GoogleIntegration(
+            user_id=authenticated_user.id,
+            access_token='test_token',
+            refresh_token='test_refresh',
+            token_expiry=(datetime.now(UTC) - timedelta(hours=1)).replace(microsecond=0).isoformat(),
+            tasks_enabled=True
+        )
+        db.session.add(integration)
+        db.session.commit()
+    
+    with patch('famos.routes.main.get_tasks_service', return_value=mock_google_service), \
+         patch('famos.routes.main.get_user_tasks', return_value=[{
+             'id': 'task1',
+             'title': 'Test Task 1',
+             'status': 'needsAction',
+             'notes': 'Test notes',
+             'due': datetime.now(UTC).replace(microsecond=0).isoformat(),
+             'completed': None,
+             'parent': None,
+             'list_id': 'list1',
+             'list_name': 'Test List 1'
+         }]):
+        response = auth_client.get('/dashboard')
+        assert response.status_code == 200
+        # Should still work because token gets refreshed
+        assert b'Test List 1' in response.data
+        assert b'Test Task 1' in response.data

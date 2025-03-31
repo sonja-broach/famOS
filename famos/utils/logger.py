@@ -35,5 +35,4 @@ def setup_logger(app):
     app.logger.setLevel(logging.INFO)
     logger.setLevel(logging.INFO)
     
-    app.logger.info('famOS startup')
     logger.info('famOS startup')

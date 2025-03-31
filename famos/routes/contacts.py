@@ -17,13 +17,13 @@ def index():
         return redirect(url_for('family.create'))
     
     try:
-        contacts = Contact.query.filter_by(family_id=current_user.family_id).all()
+        contacts = Contact.query.filter_by(family_id=current_user.family.id).all()
     except SQLAlchemyError as e:
         logger.error(f'Database error while fetching contacts: {str(e)}')
         flash('An error occurred while loading contacts.', 'error')
         contacts = []
     
-    return render_template('contacts/index.html', form=form, contacts=contacts)
+    return render_template('contacts/index.html', contacts=contacts, contact_form=form)
 
 @bp.route('/add', methods=['POST'])
 @login_required
@@ -42,7 +42,7 @@ def add_contact():
                 phone=form.phone.data,
                 role=form.role.data,
                 notes=form.notes.data,
-                family_id=current_user.family_id
+                family_id=current_user.family.id
             )
             db.session.add(contact)
             db.session.commit()
@@ -58,7 +58,7 @@ def add_contact():
 @login_required
 def edit_contact(id):
     contact = Contact.query.get_or_404(id)
-    if contact.family_id != current_user.family_id:
+    if contact.family_id != current_user.family.id:
         flash('Unauthorized access', 'error')
         return redirect(url_for('contacts.index'))
     

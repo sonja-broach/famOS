@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 
+{% block title %}Family Contacts{% endblock %}
+
 {% block content %}
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -21,7 +23,9 @@
                                     <div class="d-flex justify-content-between">
                                         <div>
                                             <h5 class="card-title">{{ contact.first_name }} {{ contact.last_name }}</h5>
-                                            <p class="card-text text-muted">{{ contact.role }}</p>
+                                            {% if contact.role %}
+                                                <p class="card-text text-muted">{{ contact.role|title }}</p>
+                                            {% endif %}
                                             {% if contact.email %}
                                                 <p class="card-text text-muted">{{ contact.email }}</p>
                                             {% endif %}
@@ -29,7 +33,7 @@
                                                 <p class="card-text text-muted">{{ contact.phone }}</p>
                                             {% endif %}
                                             {% if contact.notes %}
-                                                <p class="card-text">{{ contact.notes }}</p>
+                                                <p class="card-text text-muted small">{{ contact.notes }}</p>
                                             {% endif %}
                                         </div>
                                         <a href="{{ url_for('contacts.edit_contact', id=contact.id) }}" 
@@ -58,57 +62,57 @@
                 </div>
                 <div class="modal-body">
                     <form method="POST" action="{{ url_for('contacts.add_contact') }}">
-                        {{ form.csrf_token }}
+                        {{ contact_form.csrf_token }}
                         <div class="mb-3">
-                            {{ form.first_name.label(class="form-label") }}
-                            {{ form.first_name(class="form-control") }}
-                            {% if form.first_name.errors %}
-                                {% for error in form.first_name.errors %}
+                            {{ contact_form.first_name.label(class="form-label") }}
+                            {{ contact_form.first_name(class="form-control") }}
+                            {% if contact_form.first_name.errors %}
+                                {% for error in contact_form.first_name.errors %}
                                     <div class="text-danger">{{ error }}</div>
                                 {% endfor %}
                             {% endif %}
                         </div>
                         <div class="mb-3">
-                            {{ form.last_name.label(class="form-label") }}
-                            {{ form.last_name(class="form-control") }}
-                            {% if form.last_name.errors %}
-                                {% for error in form.last_name.errors %}
+                            {{ contact_form.last_name.label(class="form-label") }}
+                            {{ contact_form.last_name(class="form-control") }}
+                            {% if contact_form.last_name.errors %}
+                                {% for error in contact_form.last_name.errors %}
                                     <div class="text-danger">{{ error }}</div>
                                 {% endfor %}
                             {% endif %}
                         </div>
                         <div class="mb-3">
-                            {{ form.role.label(class="form-label") }}
-                            {{ form.role(class="form-select") }}
-                            {% if form.role.errors %}
-                                {% for error in form.role.errors %}
+                            {{ contact_form.role.label(class="form-label") }}
+                            {{ contact_form.role(class="form-control") }}
+                            {% if contact_form.role.errors %}
+                                {% for error in contact_form.role.errors %}
                                     <div class="text-danger">{{ error }}</div>
                                 {% endfor %}
                             {% endif %}
                         </div>
                         <div class="mb-3">
-                            {{ form.email.label(class="form-label") }}
-                            {{ form.email(class="form-control") }}
-                            {% if form.email.errors %}
-                                {% for error in form.email.errors %}
+                            {{ contact_form.email.label(class="form-label") }}
+                            {{ contact_form.email(class="form-control") }}
+                            {% if contact_form.email.errors %}
+                                {% for error in contact_form.email.errors %}
                                     <div class="text-danger">{{ error }}</div>
                                 {% endfor %}
                             {% endif %}
                         </div>
                         <div class="mb-3">
-                            {{ form.phone.label(class="form-label") }}
-                            {{ form.phone(class="form-control") }}
-                            {% if form.phone.errors %}
-                                {% for error in form.phone.errors %}
+                            {{ contact_form.phone.label(class="form-label") }}
+                            {{ contact_form.phone(class="form-control") }}
+                            {% if contact_form.phone.errors %}
+                                {% for error in contact_form.phone.errors %}
                                     <div class="text-danger">{{ error }}</div>
                                 {% endfor %}
                             {% endif %}
                         </div>
                         <div class="mb-3">
-                            {{ form.notes.label(class="form-label") }}
-                            {{ form.notes(class="form-control", rows=3) }}
-                            {% if form.notes.errors %}
-                                {% for error in form.notes.errors %}
+                            {{ contact_form.notes.label(class="form-label") }}
+                            {{ contact_form.notes(class="form-control", rows=3) }}
+                            {% if contact_form.notes.errors %}
+                                {% for error in contact_form.notes.errors %}
                                     <div class="text-danger">{{ error }}</div>
                                 {% endfor %}
                             {% endif %}
